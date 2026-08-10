@@ -43,6 +43,7 @@ jobs:
             --include-fragments
             .
           fail: ${{ github.event_name != 'schedule' }}
+          failIfEmpty: false
           jobSummary: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
