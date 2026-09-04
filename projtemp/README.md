@@ -63,6 +63,10 @@ contents land at the project root keeping their internal structure, so
 `global/ci/python/.github/workflows/python.yml` arrives as
 `.github/workflows/python.yml`.
 
+What's in there: `ci/` (python, go, node, docker, gitleaks, links), `docker/`
+(python, go), `editor/` (editorconfig, vscode), `github/` (issues, dependabot,
+codeowners), `python/ruff`, `changelog`, `disclaimer`.
+
 A directory is a piece once it holds a file or a dotted entry; above that it is
 just a grouping level. `ci/python` is a piece, `ci` is the group — `projtemp list`
 shows what is addable. Pieces are copied before the placeholder pass, so they get

@@ -1,0 +1,11 @@
+# Placeholder urls
+^https?://(www\.)?example\.(com|org|net)
+^https?://your-domain\.example
+
+# dev servers
+^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?
+
+# block CI runners / require auth
+^https?://(www\.)?linkedin\.com
+^https?://(www\.)?x\.com
+^https?://twitter\.com
