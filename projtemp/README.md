@@ -17,22 +17,29 @@ projtemp <type> <project_name>
    - `[DATE]` → today (`DISCLAIMER.md`)
    - `Copyright (c) <year> <name>` → the current year and your `git config user.name`
 3. `git init` on `main`, `git add -A`, and an initial commit.
-4. Adds `origin` pointing at `https://github.com/PeacexF/<project_name>` (nothing is pushed).
+4. Checks whether `https://github.com/PeacexF/<project_name>` actually exists.
+   Only if it does is `origin` added — no dangling remotes. If the repo is
+   empty, the initial commit is pushed; if it already has commits, the remote is
+   attached but nothing is pushed. If it doesn't exist, you get the
+   `gh repo create` line to run.
 5. Opens the new directory in `code`.
 
 `apache-2.0/LICENSE` and `agplv3/LICENSE` are verbatim license text, so their
-`[yyyy]` / `<name of author>` boilerplate is deliberately left alone — put your
-copyright in a `NOTICE` file or in source headers instead. Everything else the
-templates leave empty stays empty on purpose.
+`[yyyy]` / `<name of author>` boilerplate is deliberately left alone. Everything
+else the templates leave empty stays empty on purpose.
 
 ## Install
 
+From the repo root:
+
 ```sh
-uv tool install --editable projtemp
+uv tool install --editable .
 ```
 
-Editable, so pulling this repo updates the CLI. `pipx install -e projtemp`
-works the same way.
+Editable, so pulling this repo updates the CLI with no reinstall. `pipx install -e .`
+works the same way. The build manifest is the repo-root `pyproject.toml`: an editable
+install needs the package directory importable under its own name, which is why that
+one file sits at the root rather than in here.
 
 The templates root is found in this order: `--templates`, `$PROJTEMP_TEMPLATES`,
 the config file, then the checkout the installed source lives in. If you install
@@ -52,8 +59,10 @@ projtemp config --set-templates ~/Workspace/Projects/ProjectTemplate
 | `--name NAME` | Value for `[repo name]` if it differs from the directory name |
 | `--owner OWNER` | GitHub owner for `origin` |
 | `--remote URL` | Full `origin` URL, overriding `--owner` |
-| `--no-remote` | Skip the remote |
-| `--no-git` | Skip init, commit and remote |
+| `--no-remote` | Skip the remote entirely |
+| `--no-push` | Add `origin` but do not push |
+| `--force-remote` | Add `origin` without checking that the repo exists |
+| `--no-git` | Skip init, commit, remote and push |
 | `-m, --message MSG` | Initial commit message (default `init`) |
 | `--no-open` | Do not open an editor |
 | `--editor CMD` | Editor command (default `code`) |
@@ -63,3 +72,21 @@ projtemp config --set-templates ~/Workspace/Projects/ProjectTemplate
 
 `projtemp config` shows the stored defaults and can set `--set-templates`,
 `--set-author`, `--set-owner` and `--set-editor`.
+
+## Layout
+
+One job per file. Only `cli.py` imports click or prints anything; every other
+module returns values and raises `ProjtempError`, so the logic can be used or
+tested without going through the command line.
+
+| File | Job |
+| --- | --- |
+| `cli.py` | Command surface, flags, and all output |
+| `templates.py` | Where the templates root is, and what counts as a template |
+| `scaffold.py` | Destination checks and copying the tree |
+| `placeholders.py` | `[repo name]`, `[DATE]`, and the copyright line |
+| `git.py` | `init`, `commit`, `remote add`, `push`, and probing a remote |
+| `github.py` | GitHub URL and slug conventions — no network |
+| `editor.py` | Opening the finished project |
+| `config.py` | Stored defaults |
+| `__init__.py` | Version and `ProjtempError` |

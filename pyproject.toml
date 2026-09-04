@@ -6,12 +6,12 @@ build-backend = "hatchling.build"
 name = "projtemp"
 version = "0.1.0"
 description = "Scatter a new project from the ProjectTemplate starting points."
-readme = "README.md"
+readme = "projtemp/README.md"
 requires-python = ">=3.9"
 dependencies = ["click>=8.1"]
 
 [project.scripts]
-projtemp = "projtemp:main"
+projtemp = "projtemp.cli:main"
 
 [tool.hatch.build.targets.wheel]
-only-include = ["projtemp.py"]
+packages = ["projtemp"]
