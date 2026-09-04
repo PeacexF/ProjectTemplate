@@ -9,11 +9,17 @@ from . import ProjtempError
 from . import config
 
 MARKER = "LICENSE"
+POOL_DIR = "global"
 
 
 def is_template(path: Path) -> bool:
     """A template is a non-hidden top-level directory holding a LICENSE."""
-    return path.is_dir() and not path.name.startswith(".") and (path / MARKER).is_file()
+    return (
+        path.is_dir()
+        and not path.name.startswith(".")
+        and path.name != POOL_DIR
+        and (path / MARKER).is_file()
+    )
 
 
 def names(root: Path) -> list[str]:

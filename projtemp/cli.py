@@ -8,7 +8,18 @@ from pathlib import Path
 
 import click
 
-from . import ProjtempError, __version__, config, editor, git, github, placeholders, scaffold, templates
+from . import (
+    ProjtempError,
+    __version__,
+    addons,
+    config,
+    editor,
+    git,
+    github,
+    placeholders,
+    scaffold,
+    templates,
+)
 
 
 def step(text: str) -> None:
@@ -72,6 +83,13 @@ def list_cmd(templates_opt: str | None) -> None:
     click.secho(str(root), fg="cyan")
     for name in found:
         click.echo(f"  {name:<22} {len(scaffold.files_in(root / name))} files")
+
+    pool = addons.pool_root(root)
+    pieces = addons.available(pool)
+    if pieces:
+        click.secho(f"\n{pool}  (--add)", fg="cyan")
+        for name in pieces:
+            click.echo(f"  {name:<22} {len(scaffold.files_in(pool / name))} files")
 
 
 @main.command("config")
@@ -160,6 +178,7 @@ def attach_remote(dest: Path, url: str, push: bool, force: bool) -> None:
 @click.option("-m", "--message", default="init", show_default=True, help="Initial commit message.")
 @click.option("--no-open", is_flag=True, help="Do not open the project in an editor.")
 @click.option("--editor", "editor_opt", default=None, help=f"Editor command to open with (default: {config.DEFAULT_EDITOR}).")
+@click.option("--add", "add_opt", multiple=True, metavar="PIECE,...", help="Pieces from the shared pool to overlay, comma separated.")
 @click.option("--readme", is_flag=True, help="Seed the empty README.md with the project name as an H1.")
 @click.option("--force", is_flag=True, help="Copy into the target directory even if it already has files.")
 @click.option("-n", "--dry-run", is_flag=True, help="Show what would happen without writing anything.")
@@ -180,6 +199,7 @@ def new_cmd(
     message: str,
     no_open: bool,
     editor_opt: str | None,
+    add_opt: tuple[str, ...],
     readme: bool,
     force: bool,
     dry_run: bool,
@@ -192,6 +212,9 @@ def new_cmd(
     if type_ not in available:
         raise ProjtempError(f"unknown type {type_!r}. Available: {', '.join(available) or '(none)'}")
     src = root / type_
+
+    pool = addons.pool_root(root)
+    pieces = [(name, addons.resolve(pool, name)) for name in addons.parse(add_opt)]
 
     dest = (Path(into).expanduser() / project_name).resolve()
     scaffold.check_destination(dest, root, force)
@@ -218,6 +241,9 @@ def new_cmd(
         click.secho("dry run, nothing written", fg="yellow")
         for rel in scaffold.files_in(src):
             click.echo(f"  copy   {rel}")
+        for name, piece in pieces:
+            for rel in scaffold.files_in(piece) or [Path(piece.name)]:
+                click.echo(f"  add    {rel}   ({name})")
         click.echo(f"  fill   [repo name] -> {name}")
         click.echo(f"  fill   [DATE] -> {_dt.date.today().isoformat()}")
         click.echo(f"  fill   copyright -> Copyright (c) {year} {author}")
@@ -233,6 +259,12 @@ def new_cmd(
         return
 
     step(f"copied {scaffold.copy(src, dest)} files")
+
+    for name, piece in pieces:
+        copied, overwritten = addons.add(piece, dest)
+        step(f"added {name} ({len(copied)} files)")
+        for rel in copied:
+            click.echo(f"    {rel}{'  (overwrote template file)' if rel in overwritten else ''}")
 
     if readme and scaffold.seed_readme(dest, name):
         step("seeded README.md")

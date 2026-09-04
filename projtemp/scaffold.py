@@ -18,6 +18,8 @@ def check_destination(dest: Path, templates_root: Path, force: bool) -> None:
 
 
 def files_in(root: Path) -> list[Path]:
+    if root.is_file():
+        return [Path(root.name)]
     return sorted(p.relative_to(root) for p in root.rglob("*") if p.is_file())
 
 

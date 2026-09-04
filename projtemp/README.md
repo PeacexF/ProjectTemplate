@@ -12,17 +12,18 @@ projtemp <type> <project_name>
 ## What it does
 
 1. Copies `<type>/` into `./<project_name>/`, hidden files included.
-2. Fills the placeholders:
+2. Overlays any `--add` pieces from `global/` on top.
+3. Fills the placeholders:
    - `[repo name]` → the project name (`CONTRIBUTING.md`)
    - `[DATE]` → today (`DISCLAIMER.md`)
    - `Copyright (c) <year> <name>` → the current year and your `git config user.name`
-3. `git init` on `main`, `git add -A`, and an initial commit.
-4. Checks whether `https://github.com/PeacexF/<project_name>` actually exists.
+4. `git init` on `main`, `git add -A`, and an initial commit.
+5. Checks whether `https://github.com/PeacexF/<project_name>` actually exists.
    Only if it does is `origin` added — no dangling remotes. If the repo is
    empty, the initial commit is pushed; if it already has commits, the remote is
    attached but nothing is pushed. If it doesn't exist, you get the
    `gh repo create` line to run.
-5. Opens the new directory in `code`.
+6. Opens the new directory in `code`.
 
 `apache-2.0/LICENSE` and `agplv3/LICENSE` are verbatim license text, so their
 `[yyyy]` / `<name of author>` boilerplate is deliberately left alone. Everything
@@ -49,6 +50,25 @@ non-editably, pin it once:
 projtemp config --set-templates ~/Workspace/Projects/ProjectTemplate
 ```
 
+## The shared pool
+
+`global/` holds pieces that any project can take, whatever its type:
+
+```sh
+projtemp open-source python-checker --add ci/python,disclaimer
+```
+
+The pool is a plain filesystem and `--add` takes literal paths into it. A piece's
+contents land at the project root keeping their internal structure, so
+`global/ci/python/.github/workflows/python.yml` arrives as
+`.github/workflows/python.yml`.
+
+A directory is a piece once it holds a file or a dotted entry; above that it is
+just a grouping level. `ci/python` is a piece, `ci` is the group — `projtemp list`
+shows what is addable. Pieces are copied before the placeholder pass, so they get
+`[DATE]` and the copyright line filled too. A piece that collides with a template
+file wins, and the overwrite is reported.
+
 ## Options
 
 | Flag | Effect |
@@ -56,6 +76,7 @@ projtemp config --set-templates ~/Workspace/Projects/ProjectTemplate
 | `-C, --into DIR` | Create the project under `DIR` instead of the cwd |
 | `-a, --author NAME` | Name for the copyright line |
 | `-y, --year YEAR` | Year for the copyright line |
+| `--add PIECE,...` | Pieces from `global/` to overlay (repeatable) |
 | `--name NAME` | Value for `[repo name]` if it differs from the directory name |
 | `--owner OWNER` | GitHub owner for `origin` |
 | `--remote URL` | Full `origin` URL, overriding `--owner` |
@@ -87,6 +108,7 @@ tested without going through the command line.
 | `placeholders.py` | `[repo name]`, `[DATE]`, and the copyright line |
 | `git.py` | `init`, `commit`, `remote add`, `push`, and probing a remote |
 | `github.py` | GitHub URL and slug conventions — no network |
+| `addons.py` | Resolving and overlaying `--add` pieces |
 | `editor.py` | Opening the finished project |
 | `config.py` | Stored defaults |
 | `__init__.py` | Version and `ProjtempError` |
