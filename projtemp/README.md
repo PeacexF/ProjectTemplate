@@ -25,7 +25,7 @@ four remote states, the module map — in [`docs/`](docs/README.md).
    Only if it does is `origin` added — no dangling remotes. If the repo is
    empty, the initial commit is pushed; if it already has commits, the remote is
    attached but nothing is pushed. If it doesn't exist, you get the
-   `gh repo create` line to run.
+   `gh repo create` line to run — or, with `--create`, it gets run for you.
 6. Opens the new directory in `code`.
 
 `apache-2.0/LICENSE` and `agplv3/LICENSE` are verbatim license text, so their
@@ -90,6 +90,8 @@ file wins, and the overwrite is reported.
 | `--no-remote` | Skip the remote entirely |
 | `--no-push` | Add `origin` but do not push |
 | `--force-remote` | Add `origin` without checking that the repo exists |
+| `--create` | Create the GitHub repo with `gh` when it doesn't exist yet |
+| `--private` / `--public` | Visibility for `--create` (default: from the type) |
 | `--no-git` | Skip init, commit, remote and push |
 | `-m, --message MSG` | Initial commit message (default `init`) |
 | `--no-open` | Do not open an editor |
@@ -100,6 +102,11 @@ file wins, and the overwrite is reported.
 
 `projtemp config` shows the stored defaults and can set `--set-templates`,
 `--set-author`, `--set-owner` and `--set-editor`.
+
+`projtemp check` audits the templates themselves — required files, markers the
+CLI can't fill, copyright lines it wouldn't rewrite. `.github/workflows/templates.yml`
+runs it on every push, then scaffolds every type and overlays every piece.
+`projtemp list --plain` and `--pool --plain` print bare names for those loops.
 
 ## Layout
 
@@ -114,7 +121,9 @@ tested without going through the command line.
 | `scaffold.py` | Destination checks and copying the tree |
 | `placeholders.py` | `[repo name]`, `[DATE]`, and the copyright line |
 | `git.py` | `init`, `commit`, `remote add`, `push`, and probing a remote |
-| `github.py` | GitHub URL and slug conventions — no network |
+| `github.py` | GitHub URL, slug and visibility conventions — no network |
+| `gh.py` | Creating the repo through the `gh` CLI |
+| `check.py` | Auditing the templates themselves |
 | `addons.py` | Resolving and overlaying `--add` pieces |
 | `editor.py` | Opening the finished project |
 | `config.py` | Stored defaults |

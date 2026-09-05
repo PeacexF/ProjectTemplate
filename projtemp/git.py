@@ -61,6 +61,12 @@ def add_remote(dest: Path, url: str, name: str = "origin") -> str | None:
     return None if proc.returncode == 0 else _first_error(proc)
 
 
+def remote_url(dest: Path, name: str = "origin") -> str | None:
+    """The URL git actually has for a remote, or None if there isn't one."""
+    proc = _run(["remote", "get-url", name], dest)
+    return proc.stdout.strip() or None if proc.returncode == 0 else None
+
+
 def push(dest: Path, branch: str = "main", remote: str = "origin") -> str | None:
     proc = _run(["push", "-u", remote, branch], dest)
     return None if proc.returncode == 0 else _first_error(proc)

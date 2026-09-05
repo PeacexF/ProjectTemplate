@@ -12,16 +12,25 @@ imported and tested without going through a command line.
 | `scaffold.py` | Destination checks, copying, README seeding | — |
 | `addons.py` | Discovering, resolving and overlaying `--add` pieces | `templates` |
 | `placeholders.py` | The substitution pass and the leftovers report | — |
+| `check.py` | Auditing the templates themselves | `addons`, `placeholders`, `templates` |
 | `git.py` | `init`, `commit`, `remote add`, `push`, remote probing | — |
-| `github.py` | URL and slug conventions. No network | — |
+| `github.py` | URL, slug and visibility conventions. No network | — |
+| `gh.py` | Creating a repo through the `gh` CLI | — |
 | `editor.py` | Launching the editor | — |
 | `config.py` | Reading and writing stored defaults | — |
 | `__init__.py` | `__version__` and `ProjtempError` | — |
 
 The dependency graph is nearly flat. `templates` imports `config` for a path to
-name in an error; `addons` imports `templates` for the `global` directory name.
-Nothing else imports a sibling. `ProjtempError` lives in `__init__.py` precisely
-so no module has to import another to raise it.
+name in an error; `addons` imports `templates` for the `global` directory name;
+`check` imports the three modules whose rules it is auditing against, which is
+the whole point of it. Nothing else imports a sibling. `ProjtempError` lives in
+`__init__.py` precisely so no module has to import another to raise it.
+
+`github.py` and `gh.py` are split along the network line rather than by topic:
+one holds the conventions — how a URL is built, which host counts as GitHub,
+which types default to private — and never makes a call, the other shells out to
+`gh` and never decides anything. That keeps the fiddly string handling testable
+without a network and the network code trivial enough not to need testing.
 
 ## The two conventions
 
@@ -55,6 +64,7 @@ scaffold.seed_readme()    only if --readme
 placeholders.fill()       one pass over everything, pieces included
 git.init/commit_all       local repo
 git.remote_state()        probe, then attach_remote() decides
+gh.create_repo()          only on --create, and only when the repo is missing
 editor.open_in()          fire and forget
 placeholders.unfilled()   report what's left
 ```
@@ -65,7 +75,10 @@ a seeded README would get the same treatment.
 
 `attach_remote` is the only real branching logic in `cli.py`, and it lives there
 rather than in `git.py` because every branch ends in a message. `git.py` reports
-a `RemoteState`; deciding what that means is a presentation concern.
+a `RemoteState`; deciding what that means is a presentation concern. `--create`
+hangs off the one branch that was previously a dead end, and `create_remote`
+splits out beside it for the same reason — it is four failure messages and one
+success path.
 
 ## Dry run
 
@@ -79,21 +92,26 @@ shape of bug that arrangement invites.
 
 ## Testing
 
-There are no tests. The modules are structured for them — every one but `cli.py`
-is pure input/output with no printing, and `github.py` deliberately holds the
-URL conventions apart from `git.py` so the string logic is testable without a
-network — but nothing is written yet.
+There is no unit test suite. The modules are structured for one — every module
+but `cli.py` is pure input/output with no printing — but what exists today is
+end to end: `.github/workflows/templates.yml` runs `projtemp check`, scaffolds
+every type, and overlays every piece on each push. See
+[checking.md](checking.md).
 
-The cheap manual check, and what `CONTRIBUTING.md` asks contributors to do:
+The same thing by hand, and what `CONTRIBUTING.md` asks contributors to do:
 
 ```sh
+projtemp check
 cd "$(mktemp -d)"
 projtemp open-source probe --add ci/python,disclaimer --no-git --no-open
 grep -rn "\[DATE\]\|\[repo name\]" probe/
 ```
 
 `--no-git --no-open` keeps it from touching the network or the editor.
-`projtemp check` in `notes/FEATURES.md` is the automated version.
+
+The gap the CI cannot close is `--create`, since it would have to make a real
+repo to exercise it. `gh.create_args` exists as a separate function so the
+invocation can at least be asserted without running it.
 
 ## Extending it
 
@@ -112,11 +130,8 @@ does the work. Keep the printing on the `cli.py` side.
 
 ## Known sharp edges
 
-- **`name` shadowing.** `--add` overwrites the project name used for
-  `[repo name]` and `--readme`. Details and fix in
-  [placeholders.md](placeholders.md).
-- **`--force-remote` never pushes.** The push keys off a probe that was skipped.
-  See [git-and-remote.md](git-and-remote.md).
+- **`--force-remote` never pushes**, and rules out `--create`. Both key off a
+  probe that was skipped. See [git-and-remote.md](git-and-remote.md).
 - **`LICENSE` is load-bearing.** A template that loses it silently stops being a
   template.
 - **Pool paths are literal.** `--add ci` keeps the group level in the
@@ -125,10 +140,13 @@ does the work. Keep the printing on the `cli.py` side.
   N files" line overcounts under `--force`.
 - **`unfilled` reads only `*.md`**, so a marker in a non-markdown file is never
   reported.
-- **Subcommand names shadow types.** A template named `new`, `list` or `config`
-  would be unreachable by the `projtemp <type> <name>` shorthand.
+- **Subcommand names shadow types.** A template named `new`, `list`, `check` or
+  `config` would be unreachable by the `projtemp <type> <name>` shorthand.
+- **`check`'s marker rule is a heuristic**, scoped to markdown and to a fixed
+  vocabulary, because outside markdown a bracket is usually syntax. See
+  [checking.md](checking.md).
 
-`notes/FEATURES.md` is the parking lot for what's next — `--create` to make the
-GitHub repo, `projtemp check`, CI over the templates — and for the open question
-underneath several of them: whether templates stay whole directories you can
-`cp -R`, or become recipes declared in a manifest.
+`notes/FEATURES.md` is the parking lot for what's next — `--create --description`,
+more `check` rules, a unit suite — and for the open question underneath several
+of them: whether templates stay whole directories you can `cp -R`, or become
+recipes declared in a manifest.

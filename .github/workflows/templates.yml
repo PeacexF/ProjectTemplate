@@ -1,0 +1,68 @@
+name: Templates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: templates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scaffold:
+    name: Check and scaffold
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install projtemp
+        run: uv tool install --editable .
+
+      - name: Audit the templates
+        run: projtemp check
+
+      # A type silently drops out of `projtemp list` if its LICENSE goes
+      # missing, so scaffold every one and fail on any placeholder the CLI
+      # could not fill. --no-git and --no-open keep it off the network.
+      - name: Scaffold every type
+        run: |
+          set -euo pipefail
+          for type in $(projtemp list --plain); do
+            echo "::group::$type"
+            out=$(projtemp "$type" "smoke-$type" -C "$RUNNER_TEMP" \
+              --author "CI" --readme --no-git --no-open)
+            echo "$out"
+            if grep -q "Still to fill in by hand" <<<"$out"; then
+              echo "::error::$type left an unfilled placeholder"
+              exit 1
+            fi
+            for required in LICENSE README.md .gitignore; do
+              if [ ! -f "$RUNNER_TEMP/smoke-$type/$required" ]; then
+                echo "::error::$type scaffolded without $required"
+                exit 1
+              fi
+            done
+            echo "::endgroup::"
+          done
+
+      - name: Overlay every piece
+        run: |
+          set -euo pipefail
+          for piece in $(projtemp list --pool --plain); do
+            name="piece-${piece//\//-}"
+            echo "::group::$piece"
+            projtemp open-source "$name" -C "$RUNNER_TEMP" --add "$piece" \
+              --author "CI" --no-git --no-open
+            echo "::endgroup::"
+          done

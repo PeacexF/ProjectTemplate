@@ -12,8 +12,10 @@ from . import (
     ProjtempError,
     __version__,
     addons,
+    check,
     config,
     editor,
+    gh,
     git,
     github,
     placeholders,
@@ -74,22 +76,64 @@ def main(ctx: click.Context) -> None:
 
 @main.command("list")
 @click.option("--templates", "templates_opt", default=None, help="Path to the ProjectTemplate checkout.")
-def list_cmd(templates_opt: str | None) -> None:
-    """List the available project types."""
+@click.option("--pool", "pool_only", is_flag=True, help="List the --add pieces instead of the project types.")
+@click.option("--plain", is_flag=True, help="Names only, one per line, for scripting.")
+def list_cmd(templates_opt: str | None, pool_only: bool, plain: bool) -> None:
+    """List the available project types, or the pieces in the shared pool."""
     root = templates.resolve_root(templates_opt, config.load())
+    pool = addons.pool_root(root)
+
+    if pool_only:
+        pieces = addons.available(pool)
+        if not pieces:
+            raise ProjtempError(f"no pieces found in {pool}")
+        if plain:
+            for name in pieces:
+                click.echo(name)
+            return
+        click.secho(f"{pool}  (--add)", fg="cyan")
+        for name in pieces:
+            click.echo(f"  {name:<22} {len(scaffold.files_in(pool / name))} files")
+        return
+
     found = templates.names(root)
     if not found:
         raise ProjtempError(f"no templates found in {root}")
+    if plain:
+        for name in found:
+            click.echo(name)
+        return
+
     click.secho(str(root), fg="cyan")
     for name in found:
         click.echo(f"  {name:<22} {len(scaffold.files_in(root / name))} files")
 
-    pool = addons.pool_root(root)
     pieces = addons.available(pool)
     if pieces:
         click.secho(f"\n{pool}  (--add)", fg="cyan")
         for name in pieces:
             click.echo(f"  {name:<22} {len(scaffold.files_in(pool / name))} files")
+
+
+@main.command("check")
+@click.option("--templates", "templates_opt", default=None, help="Path to the ProjectTemplate checkout.")
+def check_cmd(templates_opt: str | None) -> None:
+    """Audit the templates for missing files and markers the CLI cannot fill."""
+    root = templates.resolve_root(templates_opt, config.load())
+    problems = check.run(root)
+    click.secho(str(root), fg="cyan")
+
+    if not problems:
+        types = templates.names(root)
+        pieces = addons.available(addons.pool_root(root))
+        step(f"ok — {len(types)} types, {len(pieces)} pieces")
+        return
+
+    width = max(len(where) for where, _ in problems)
+    for where, message in problems:
+        click.secho(f"  {where:<{width}}", fg="yellow", nl=False)
+        click.echo(f"  {message}")
+    raise ProjtempError(f"{len(problems)} problem{'' if len(problems) == 1 else 's'} found")
 
 
 @main.command("config")
@@ -132,12 +176,40 @@ def config_cmd(
     click.echo(f"editor      : {stored.get('editor', config.DEFAULT_EDITOR)}")
 
 
-def attach_remote(dest: Path, url: str, push: bool, force: bool) -> None:
+def create_remote(dest: Path, url: str, push: bool, private: bool) -> None:
+    """The --create path: make the repo, and let gh wire up origin itself."""
+    if not github.is_github(url):
+        warn(f"--create only works with github.com remotes, not {url}")
+        return
+    blocked = gh.unusable()
+    if blocked:
+        warn(f"cannot create the repo: {blocked}")
+        warn(f"create it with: {github.create_hint(url, private)}")
+        return
+
+    slug = github.slug(url)
+    failure = gh.create_repo(slug, private, push, dest)
+    if failure:
+        warn(f"gh repo create failed: {failure}")
+        warn(f"try it by hand: {github.create_hint(url, private)}")
+        return
+
+    step(f"created {'private' if private else 'public'} repo {slug}")
+    # gh picks the protocol from the user's git config, so report what landed.
+    step(f"origin -> {git.remote_url(dest) or url}")
+    if push:
+        step("pushed main -> origin")
+
+
+def attach_remote(dest: Path, url: str, push: bool, force: bool, create: bool, private: bool) -> None:
     state = git.RemoteState.UNKNOWN if force else git.remote_state(url)
 
     if not force and state is git.RemoteState.ABSENT:
+        if create:
+            create_remote(dest, url, push, private)
+            return
         warn(f"{url} does not exist, origin not added")
-        warn(f"create it with: {github.create_hint(url)}")
+        warn(f"create it with: {github.create_hint(url, private)}")
         return
     if not force and state is git.RemoteState.UNKNOWN:
         warn(f"could not reach {url}, origin not added")
@@ -174,6 +246,8 @@ def attach_remote(dest: Path, url: str, push: bool, force: bool) -> None:
 @click.option("--no-remote", is_flag=True, help="Do not add an origin remote.")
 @click.option("--no-push", is_flag=True, help="Add origin but do not push the initial commit.")
 @click.option("--force-remote", is_flag=True, help="Add origin without checking that the repo exists.")
+@click.option("--create", is_flag=True, help="Create the GitHub repo with gh when it does not exist yet.")
+@click.option("--private/--public", "private", default=None, help="Visibility for --create (default: from the type).")
 @click.option("--no-git", is_flag=True, help="Do not run git init / commit / remote / push.")
 @click.option("-m", "--message", default="init", show_default=True, help="Initial commit message.")
 @click.option("--no-open", is_flag=True, help="Do not open the project in an editor.")
@@ -195,6 +269,8 @@ def new_cmd(
     no_remote: bool,
     no_push: bool,
     force_remote: bool,
+    create: bool,
+    private: bool | None,
     no_git: bool,
     message: str,
     no_open: bool,
@@ -234,6 +310,17 @@ def new_cmd(
     else:
         url = remote_url or github.repo_url(owner or stored.get("owner", config.DEFAULT_OWNER), dest.name)
 
+    private_repo = github.default_private(type_) if private is None else private
+    if create and no_git:
+        raise ProjtempError("--create needs a repo to push from, drop --no-git")
+    if create and no_remote:
+        raise ProjtempError("--create needs a remote, drop --no-remote")
+    if create and force_remote:
+        raise ProjtempError(
+            "--create and --force-remote conflict: --force-remote skips the check "
+            "that would find the repo missing"
+        )
+
     click.secho(type_, fg="cyan", nl=False)
     click.echo(f" -> {dest}")
 
@@ -241,9 +328,9 @@ def new_cmd(
         click.secho("dry run, nothing written", fg="yellow")
         for rel in scaffold.files_in(src):
             click.echo(f"  copy   {rel}")
-        for name, piece in pieces:
+        for piece_name, piece in pieces:
             for rel in scaffold.files_in(piece) or [Path(piece.name)]:
-                click.echo(f"  add    {rel}   ({name})")
+                click.echo(f"  add    {rel}   ({piece_name})")
         click.echo(f"  fill   [repo name] -> {name}")
         click.echo(f"  fill   [DATE] -> {_dt.date.today().isoformat()}")
         click.echo(f"  fill   copyright -> Copyright (c) {year} {author}")
@@ -254,15 +341,17 @@ def new_cmd(
                 if not no_push:
                     plan += ", push"
             click.echo(plan)
+            if url and create:
+                click.echo(f"  create {github.create_hint(url, private_repo)}   (only if it is missing)")
         if not no_open:
             click.echo(f"  open   {editor_cmd}")
         return
 
     step(f"copied {scaffold.copy(src, dest)} files")
 
-    for name, piece in pieces:
+    for piece_name, piece in pieces:
         copied, overwritten = addons.add(piece, dest)
-        step(f"added {name} ({len(copied)} files)")
+        step(f"added {piece_name} ({len(copied)} files)")
         for rel in copied:
             click.echo(f"    {rel}{'  (overwrote template file)' if rel in overwritten else ''}")
 
@@ -286,7 +375,7 @@ def new_cmd(
         else:
             step(f"initial commit ({message!r})")
         if url:
-            attach_remote(dest, url, not no_push, force_remote)
+            attach_remote(dest, url, not no_push, force_remote, create, private_repo)
 
     if not no_open:
         failure = editor.open_in(dest, editor_cmd)

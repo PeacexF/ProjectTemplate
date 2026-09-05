@@ -91,35 +91,7 @@ blank, so it will not clobber a README with content in it — which is the case
 that matters under `--force`. Templates ship an empty `README.md`, so on a fresh
 scaffold it always fires.
 
-## Known bug: `--add` clobbers the project name
+## Checking a template's markers
 
-`--add` and the project name interact wrongly. In `cli.py`, the loop applying
-pieces binds `name` as its loop variable, over the `name` already holding the
-project name:
-
-```python
-name = display_name or dest.name          # cli.py:222
-
-for name, piece in pieces:                # cli.py:263 — shadows it
-    copied, overwritten = addons.add(piece, dest)
-
-if readme and scaffold.seed_readme(dest, name):     # cli.py:269
-changed = placeholders.fill(dest, name, author, year)   # cli.py:272
-```
-
-By line 269 `name` is the *last piece name*, not the project name. So:
-
-```sh
-projtemp open-source real-name --add ci/python,disclaimer --readme
-```
-
-writes `# disclaimer` into `README.md` and `contributing to **disclaimer**` into
-`CONTRIBUTING.md`.
-
-Scope: any run using `--add`. Without `--add` the loop body never runs and
-`name` survives, so plain scaffolds are correct. `--name` does not help — it
-feeds the same shadowed variable. The dry-run plan has the same shadowing at
-`cli.py:244` and so misreports `fill [repo name] -> …` for the same reason.
-
-The fix is to rename the loop variable at both sites — `for piece_name, piece in
-pieces:` — leaving `name` untouched.
+`projtemp check` audits the templates for markers this pass could not fill,
+before they ever reach a project. See [checking.md](checking.md).

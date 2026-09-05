@@ -14,7 +14,8 @@ step actually does, and where the edges are.
 | [configuration.md](configuration.md) | Templates root resolution, the config file, default lookup order |
 | [templates-and-pool.md](templates-and-pool.md) | What counts as a template, what counts as a piece, how `--add` overlays |
 | [placeholders.md](placeholders.md) | The three substitutions, what is deliberately left alone |
-| [git-and-remote.md](git-and-remote.md) | init, commit, and the four remote states |
+| [git-and-remote.md](git-and-remote.md) | init, commit, the four remote states, and `--create` |
+| [checking.md](checking.md) | `projtemp check`, its three rules, and the templates CI |
 | [architecture.md](architecture.md) | Module map, invariants, how to extend, known sharp edges |
 
 ## Quickstart
@@ -23,6 +24,7 @@ step actually does, and where the edges are.
 uv tool install --editable .          # from the repo root
 projtemp list                         # types, and pieces you can --add
 projtemp open-source my-thing         # scaffold ./my-thing
+projtemp check                        # audit the templates themselves
 ```
 
 A run prints one line per step:
@@ -56,3 +58,7 @@ projtemp open-source my-thing --add ci/python,disclaimer -n
 
 `--no-git --no-open` when you just want the files, e.g. scaffolding into a
 directory you are going to move somewhere else.
+
+`--create` when the GitHub repo does not exist yet. Without it a missing repo
+prints the `gh repo create` line and stops; with it, that line gets run, with
+visibility taken from the type.

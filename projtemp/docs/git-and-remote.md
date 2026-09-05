@@ -44,26 +44,91 @@ The result is one of four states, and each is handled differently:
 | --- | --- | --- |
 | `EMPTY` | exit 0, no refs | `origin` added, initial commit pushed |
 | `NONEMPTY` | exit 0, refs listed | `origin` added, nothing pushed, warns the remote already has commits |
-| `ABSENT` | non-zero, `not found` or `does not exist` in stderr | no remote; prints the `gh repo create` line |
+| `ABSENT` | non-zero, `not found` or `does not exist` in stderr | with `--create`, the repo is created; otherwise no remote, and the `gh repo create` line is printed |
 | `UNKNOWN` | any other failure, timeout, or `git` missing | no remote; warns it could not reach the URL |
 
 The point of the probe is that `origin` only gets attached to something that
 actually exists. A dangling remote that fails on the first push is worse than no
 remote — that is what this replaced.
 
-For `ABSENT` you get the line to run:
+For `ABSENT` without `--create` you get the line to run:
 
 ```
   https://github.com/PeacexF/my-thing does not exist, origin not added
-  create it with: gh repo create PeacexF/my-thing --source . --push
+  create it with: gh repo create PeacexF/my-thing --public --source . --push
 ```
 
 Run it from inside the new project; `--source .` and `--push` do the remote and
-the push in one go. Making the repo directly from `projtemp` is queued in
-`notes/FEATURES.md`, with visibility defaulting from the type.
+the push in one go.
 
 `UNKNOWN` is the offline case, and also the private-repo-without-credentials
 case. The conservative choice is the same either way: attach nothing.
+
+## `--create`
+
+`--create` runs that line instead of printing it. It only fires on `ABSENT` —
+a repo that already exists is attached as usual, and an unreachable one is still
+left alone, because "I could not tell" is not "it is missing".
+
+```sh
+projtemp private my-thing --create
+```
+
+```
+  git init (branch main)
+  initial commit ('init')
+  created private repo PeacexF/my-thing
+  origin -> https://github.com/PeacexF/my-thing
+  pushed main -> origin
+```
+
+### Visibility
+
+Defaults from the type: `private` and `paid` get a private repo, every other
+type gets a public one. `--private` and `--public` override it either way, and
+the choice also shows up in the printed hint when `--create` is not used, so the
+line you are told to run matches what `--create` would have done.
+
+The set lives in `github.PRIVATE_TYPES`, so a new type is public unless it is
+added there.
+
+### What it runs
+
+```sh
+gh repo create <owner>/<name> --public|--private --source . [--push]
+```
+
+`--source .` means `gh` creates the remote *and* wires up `origin` itself, so
+`projtemp` does not call `git remote add` on this path. `gh` picks https or ssh
+from the user's git config, which is why the reported URL is read back with
+`git remote get-url origin` rather than assumed to be the https one that was
+probed. `--no-push` drops `--push` and leaves the commit local.
+
+### When it can't
+
+Each of these warns and leaves the project otherwise finished — none of them
+fail the run:
+
+| Situation | What you get |
+| --- | --- |
+| `gh` not on PATH | `cannot create the repo: gh is not on PATH` plus the manual line |
+| `gh` not logged in | `cannot create the repo: gh is not logged in (run: gh auth login)` plus the manual line |
+| `--remote` points off GitHub | `--create only works with github.com remotes, not <url>` |
+| `gh repo create` fails | the last line of its stderr, plus the manual line |
+
+The host check accepts https, ssh and scp-style GitHub URLs, so
+`--remote git@github.com:you/thing.git --create` works.
+
+### Refused combinations
+
+`--create` needs a commit to push and a URL to create, so these three are usage
+errors caught before anything is written:
+
+```
+--create --no-git         no repo to push from
+--create --no-remote      no URL to create
+--create --force-remote   the probe that would find the repo missing is skipped
+```
 
 ## Flags
 

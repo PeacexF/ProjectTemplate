@@ -4,14 +4,14 @@
 projtemp [COMMAND] [ARGS]...
 ```
 
-Three commands: `new`, `list`, `config`. `new` is the default, so
+Four commands: `new`, `list`, `check`, `config`. `new` is the default, so
 `projtemp open-source my-thing` is shorthand for
 `projtemp new open-source my-thing`.
 
 The shorthand works by catching click's "no such command" error and retrying as
 `new`, which has one consequence worth knowing: a template directory named
-`new`, `list` or `config` would be shadowed by the subcommand and unreachable by
-shorthand. Nothing in the repo is named that, and `projtemp new list my-thing`
+`new`, `list`, `check` or `config` would be shadowed by the subcommand and
+unreachable by shorthand. Nothing in the repo is named that, and `projtemp new list my-thing`
 would still work.
 
 Running `projtemp` bare prints help followed by the available types.
@@ -93,11 +93,34 @@ order given, so a later piece wins a collision with an earlier one. See
 | `--no-remote` | Skip the remote entirely; still init and commit |
 | `--no-push` | Attach `origin`, do not push |
 | `--force-remote` | Attach `origin` without checking the repo exists |
+| `--create` | Create the repo through `gh` when the probe finds it missing |
+| `--private` / `--public` | Visibility for `--create`. Default: from the type |
 | `--no-git` | Skip init, commit, remote and push |
 
 `--force-remote` also skips the push, because the push decision keys off what
-the probe found and a skipped probe reports nothing. See
-[git-and-remote.md](git-and-remote.md).
+the probe found and a skipped probe reports nothing.
+
+`--create` closes the loop on the one case the probe used to just report:
+
+```sh
+projtemp private my-thing --create
+```
+
+Without it, a missing repo prints the `gh repo create` line and stops. With it,
+that line is run. Visibility defaults from the type — `private` and `paid`
+private, everything else public — and `--private` / `--public` override.
+
+Three combinations are refused up front rather than silently doing nothing,
+because each removes the very step `--create` hangs off:
+
+```
+Error: --create needs a repo to push from, drop --no-git
+Error: --create needs a remote, drop --no-remote
+Error: --create and --force-remote conflict: --force-remote skips the check that
+would find the repo missing
+```
+
+See [git-and-remote.md](git-and-remote.md).
 
 ### Editor and output
 
@@ -129,14 +152,45 @@ See [configuration.md](configuration.md).
 ## `projtemp list`
 
 ```
-projtemp list [--templates PATH]
+projtemp list [--templates PATH] [--pool] [--plain]
 ```
 
 Prints the resolved templates root, then each type with its file count, then the
 pool root and each addable piece with its file count. The piece names are
 exactly what `--add` takes.
 
-Exits 1 if the root resolves but holds no templates.
+| Flag | Effect |
+| --- | --- |
+| `--pool` | List the pool pieces instead of the project types |
+| `--plain` | Names only, one per line — no counts, no headers, no colour |
+
+`--plain` is there so shell loops can be written without parsing the pretty
+output, which is what the templates workflow does:
+
+```sh
+for type in $(projtemp list --plain); do ... done
+for piece in $(projtemp list --pool --plain); do ... done
+```
+
+Exits 1 if the root resolves but holds no templates, or with `--pool` if the
+pool holds no pieces.
+
+## `projtemp check`
+
+```
+projtemp check [--templates PATH]
+```
+
+Audits the templates and the pool without writing anything. Exits 0 and prints a
+one-line summary when everything passes:
+
+```
+/Users/you/Workspace/Projects/ProjectTemplate
+  ok — 6 types, 16 pieces
+```
+
+Otherwise it lists every problem and exits 1. See [checking.md](checking.md) for
+what it actually looks at.
 
 ## `projtemp config`
 
@@ -158,7 +212,8 @@ resolved that line reports the reason in yellow instead of failing the command.
 ## Exit codes
 
 `0` on success. `1` for anything the user has to fix — unknown type, unknown
-piece, unresolvable templates root, blocked destination, no author name.
+piece, unresolvable templates root, blocked destination, no author name, a
+contradictory `--create` combination, or any problem found by `check`.
 Everything in that class is raised as `ProjtempError` and rendered as
 `Error: <message>`.
 
