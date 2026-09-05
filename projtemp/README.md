@@ -9,6 +9,9 @@ projtemp <type> <project_name>
 `<type>` is one of the top-level template directories (`projtemp list` shows them),
 `<project_name>` is the directory to create in the current working directory.
 
+Longer form — every flag, how the pool resolves, the placeholder rules, the
+four remote states, the module map — in [`docs/`](docs/README.md).
+
 ## What it does
 
 1. Copies `<type>/` into `./<project_name>/`, hidden files included.
